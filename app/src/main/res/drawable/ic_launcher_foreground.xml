@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 进度圆环：270°，像一天已走过的热量额度 -->
+    <path
+        android:pathData="M54,27 A27,27 0 1,1 27,54"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="6.5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M54,33 A21,21 0 0,0 33,54"
+        android:strokeColor="#66FFFFFF"
+        android:strokeWidth="6.5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+    <!-- 中心叶片 -->
+    <path
+        android:pathData="M52,62 C51,52 56,44 66,42 C68,52 62,62 52,64 Z"
+        android:fillColor="#FFFFFF" />
+    <path
+        android:pathData="M53,63 C54,57 57,51 62,47"
+        android:strokeColor="#3F8F5B"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+</vector>
