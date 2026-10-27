@@ -7,6 +7,8 @@
 ![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?logo=jetpackcompose&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
+**[⬇ 下载 APK（v1.0.0，1.57 MB）](https://github.com/yue56189/calorie-diary/releases/latest)** · 要求 Android 8.0 及以上
+
 ---
 
 ## 它解决什么问题
