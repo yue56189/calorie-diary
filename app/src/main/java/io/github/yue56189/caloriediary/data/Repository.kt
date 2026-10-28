@@ -14,6 +14,7 @@ class Repository(
     private val foodDao = db.foodDao()
     private val diaryDao = db.diaryDao()
     private val goalDao = db.goalDao()
+    private val activityDao = db.activityDao()
 
     val foods: Flow<List<FoodItem>> = foodDao.observeAll()
     val categories: Flow<List<String>> = foodDao.observeCategories()
@@ -23,6 +24,8 @@ class Repository(
         diaryDao.observeRange(from, to)
     fun goalOf(date: Long): Flow<DailyGoal?> = goalDao.observeByDate(date)
     fun allGoals(): Flow<List<DailyGoal>> = goalDao.observeAll()
+    fun activityOf(date: Long): Flow<DailyActivity?> = activityDao.observeByDate(date)
+    fun allActivities(): Flow<List<DailyActivity>> = activityDao.observeAll()
 
     suspend fun searchLocal(query: String): List<FoodItem> = withContext(Dispatchers.IO) {
         if (query.isBlank()) emptyList() else foodDao.search(query.trim())
@@ -97,6 +100,15 @@ class Repository(
 
     suspend fun clearDailyGoal(date: LocalDate) = withContext(Dispatchers.IO) {
         goalDao.clear(date.toEpochDay())
+    }
+
+    /** 记录某天的运动消耗；填 0 且当天没有目标时直接删行，避免留下空记录。 */
+    suspend fun setExercise(date: LocalDate, kcal: Double) = withContext(Dispatchers.IO) {
+        activityDao.upsert(DailyActivity(date = date.toEpochDay(), exerciseKcal = kcal.coerceAtLeast(0.0)))
+    }
+
+    suspend fun clearExercise(date: LocalDate) = withContext(Dispatchers.IO) {
+        activityDao.clear(date.toEpochDay())
     }
 
     suspend fun importRemote(food: FoodItem): Long = withContext(Dispatchers.IO) {

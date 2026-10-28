@@ -14,6 +14,7 @@ import io.github.yue56189.caloriediary.data.DiaryEntry
 import io.github.yue56189.caloriediary.data.FoodItem
 import io.github.yue56189.caloriediary.data.Meal
 import io.github.yue56189.caloriediary.data.NutritionGoal
+import io.github.yue56189.caloriediary.data.NutritionMath
 import io.github.yue56189.caloriediary.data.NutritionTotal
 import io.github.yue56189.caloriediary.data.Profile
 import io.github.yue56189.caloriediary.data.RemoteFoodSource
@@ -24,6 +25,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -58,6 +60,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         .flatMapLatest { repo.goalOf(it.toEpochDay()) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    /** 当天填的运动消耗（千卡）。 */
+    val exerciseKcal: StateFlow<Double> = date
+        .flatMapLatest { repo.activityOf(it.toEpochDay()) }
+        .map { it?.exerciseKcal ?: 0.0 }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0.0)
+
     /** 生效目标：当日单独设置过就用当日的，否则用默认目标。 */
     val goal: StateFlow<NutritionGoal> = combine(dayGoal, settings) { daily, s ->
         if (daily != null) {
@@ -66,6 +74,29 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             s.goal
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), NutritionGoal(1800.0, 110.0, 50.0, 228.0))
+
+    /**
+     * 界面实际使用的目标。
+     *
+     * 手动模式直接用手填的目标；「基础代谢 + 运动消耗」模式下热量口径由
+     * BMR 与当天运动量决定，三大营养素按原比例等比缩放。
+     */
+    val effectiveGoal: StateFlow<NutritionGoal> =
+        combine(goal, exerciseKcal, settings) { base, exercise, s ->
+            if (s.goalMode == 1) {
+                NutritionMath.scaleTo(base, NutritionMath.budget(s.profile.bmr, exercise))
+            } else {
+                base
+            }
+        }.stateIn(
+            viewModelScope, SharingStarted.WhileSubscribed(5_000),
+            NutritionGoal(1800.0, 110.0, 50.0, 228.0)
+        )
+
+    /** 当日热量预算（含运动消耗），供「预算构成」卡片展示。 */
+    val budgetKcal: StateFlow<Double> = combine(exerciseKcal, settings) { exercise, s ->
+        if (s.goalMode == 1) NutritionMath.budget(s.profile.bmr, exercise) else 0.0
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0.0)
 
     val allFoods: StateFlow<List<FoodItem>> = repo.foods
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -102,6 +133,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun goToday() {
         date.value = LocalDate.now()
+    }
+
+    /** 日历选择后直接跳到某一天。 */
+    fun setDate(target: LocalDate) {
+        date.value = target
+    }
+
+    // ------------------------------------------------------------- 运动消耗
+
+    fun setExercise(kcal: Double) {
+        viewModelScope.launch { repo.setExercise(date.value, kcal) }
     }
 
     // ------------------------------------------------------------- 打卡
@@ -153,7 +195,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (q.isEmpty()) return
         remote = RemoteState(loading = true, sourceQuery = q)
         viewModelScope.launch {
-            remote = when (val r = RemoteFoodSource.search(q, settings.value.usdaApiKey)) {
+            remote = when (val r = RemoteFoodSource.search(q, sourcesOf(settings.value))) {
                 is RemoteFoodSource.Result.Success -> RemoteState(
                     loading = false, items = r.items, note = r.note, sourceQuery = q
                 )
@@ -162,6 +204,32 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 )
             }
         }
+    }
+
+    private fun sourcesOf(s: AppSettings) = RemoteFoodSource.Sources(
+        tianapiKey = s.tianapiKey,
+        usdaKey = s.usdaApiKey,
+        useOpenFoodFacts = s.useOpenFoodFacts
+    )
+
+    /**
+     * 快速记录用的一次性查询：先本地库，没有命中再联网。
+     * 与 [searchRemote] 的区别是它同步返回结果，不写界面状态。
+     */
+    suspend fun quickLookup(query: String): List<FoodItem> {
+        val q = query.trim()
+        if (q.isEmpty()) return emptyList()
+        val local = repo.searchLocal(q)
+        if (local.isNotEmpty()) return local.take(20)
+        return when (val r = RemoteFoodSource.search(q, sourcesOf(settings.value))) {
+            is RemoteFoodSource.Result.Success -> r.items.take(20)
+            is RemoteFoodSource.Result.Failure -> emptyList()
+        }
+    }
+
+    /** 直接把一条（可能来自联网的）食物加进某一餐，不写入食物库。 */
+    fun addEntryDirect(meal: Meal, food: FoodItem, grams: Double) {
+        viewModelScope.launch { repo.addEntry(date.value, meal, food, grams) }
     }
 
     fun clearRemote() {
@@ -204,6 +272,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setUsdaKey(key: String) {
         viewModelScope.launch { prefs.setUsdaKey(key) }
+    }
+
+    fun setTianapiKey(key: String) {
+        viewModelScope.launch { prefs.setTianapiKey(key) }
+    }
+
+    fun setUseOpenFoodFacts(enabled: Boolean) {
+        viewModelScope.launch { prefs.setUseOpenFoodFacts(enabled) }
+    }
+
+    fun setGoalMode(mode: Int) {
+        viewModelScope.launch { prefs.setGoalMode(mode) }
     }
 
     // ------------------------------------------------------------- 派生数据

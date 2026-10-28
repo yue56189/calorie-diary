@@ -53,8 +53,11 @@ fun GoalScreen(vm: MainViewModel, onBack: () -> Unit) {
     val date by vm.date.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     val dailyGoal by vm.dayGoal.collectAsStateWithLifecycle()
+    val exercise by vm.exerciseKcal.collectAsStateWithLifecycle()
 
     var onlyToday by remember { mutableStateOf(dailyGoal != null) }
+    val autoMode = settings.goalMode == 1
+    val autoBudget = NutritionMath.budget(settings.profile.bmr, exercise)
 
     val source = if (onlyToday && dailyGoal != null) {
         NutritionGoal(dailyGoal!!.kcal, dailyGoal!!.protein, dailyGoal!!.fat, dailyGoal!!.carbs)
@@ -79,8 +82,10 @@ fun GoalScreen(vm: MainViewModel, onBack: () -> Unit) {
     val protein = proteinText.toDoubleOrNull() ?: 0.0
     val fat = fatText.toDoubleOrNull() ?: 0.0
     val carbs = carbsText.toDoubleOrNull() ?: 0.0
+    /** 实际生效的热量口径：自动模式下由 BMR + 当天运动消耗决定。 */
+    val effectiveKcal = if (autoMode) autoBudget else kcal
     val macroKcal = protein * 4 + fat * 9 + carbs * 4
-    val diff = kcal - macroKcal
+    val diff = effectiveKcal - macroKcal
 
     Scaffold(
         topBar = {
@@ -130,6 +135,34 @@ fun GoalScreen(vm: MainViewModel, onBack: () -> Unit) {
             }
 
             item {
+                Column {
+                    Text("热量口径", style = MaterialTheme.typography.labelLarge)
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = !autoMode,
+                            onClick = { vm.setGoalMode(0) },
+                            label = { Text("手动设定") }
+                        )
+                        FilterChip(
+                            selected = autoMode,
+                            onClick = { vm.setGoalMode(1) },
+                            label = { Text("基础代谢 + 运动消耗") }
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = if (autoMode)
+                            "预算 = 基础代谢 ${settings.profile.bmr.fmt0()} + 当天运动消耗 ${exercise.fmt0()} = " +
+                                    "${autoBudget.fmt0()} kcal。运动消耗在首页「热量预算」里填，改口径立即生效。"
+                        else "自己定一个热量目标，不随运动和体重变化。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            item {
                 ElevatedCard(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.elevatedCardColors(
@@ -138,10 +171,11 @@ fun GoalScreen(vm: MainViewModel, onBack: () -> Unit) {
                 ) {
                     Column(Modifier.padding(20.dp)) {
                         GoalNumberField(
-                            value = kcalText,
+                            value = if (autoMode) effectiveKcal.fmt0() else kcalText,
                             onChange = { kcalText = it },
-                            label = "热量目标",
-                            suffix = "kcal"
+                            label = if (autoMode) "热量目标（自动）" else "热量目标",
+                            suffix = "kcal",
+                            enabled = !autoMode
                         )
                         Spacer(Modifier.height(14.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -169,19 +203,31 @@ fun GoalScreen(vm: MainViewModel, onBack: () -> Unit) {
                         )
 
                         Spacer(Modifier.height(14.dp))
-                        Text(
-                            text = "三大营养素折算 ${macroKcal.fmt0()} kcal" +
-                                    if (kcal > 0) "（与热量目标相差 ${diff.fmt0()} kcal）" else "",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (kcal > 0 && abs(diff) > 60) MaterialTheme.colorScheme.error
-                            else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        if (kcal > 0 && abs(diff) > 60) {
+                        if (autoMode) {
+                            val ratio = if (kcal > 0) effectiveKcal / kcal else 1.0
                             Text(
-                                text = "差得多说明热量和营养素对不上，建议调一下脂肪或碳水。",
+                                text = "当前配置折算 ${macroKcal.fmt0()} kcal。" +
+                                        "实际会按 ${effectiveKcal.fmt0()} kcal 等比缩放：" +
+                                        "蛋白 ${(protein * ratio).fmt0()} g · 脂肪 ${(fat * ratio).fmt0()} g · " +
+                                        "碳水 ${(carbs * ratio).fmt0()} g。",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                        } else {
+                            Text(
+                                text = "三大营养素折算 ${macroKcal.fmt0()} kcal" +
+                                        if (effectiveKcal > 0) "（与热量目标相差 ${diff.fmt0()} kcal）" else "",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (effectiveKcal > 0 && abs(diff) > 60) MaterialTheme.colorScheme.error
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (effectiveKcal > 0 && abs(diff) > 60) {
+                                Text(
+                                    text = "差得多说明热量和营养素对不上，建议调一下脂肪或碳水。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
                         }
                     }
                 }
@@ -196,9 +242,10 @@ fun GoalScreen(vm: MainViewModel, onBack: () -> Unit) {
                         Text("按我的身体数据推算", style = MaterialTheme.typography.titleSmall)
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            text = "基础代谢 ${settings.profile.bmr.fmt0()} kcal，日常消耗 " +
-                                    "${settings.profile.tdee.fmt0()} kcal，" +
-                                    "按 ${settings.profile.deficitPercent}% 缺口建议 " +
+                            text = "基础代谢 ${settings.profile.bmr.fmt0()} kcal；" +
+                                    "按常见活动量估算日常消耗 ${settings.profile.tdee.fmt0()} kcal，" +
+                                    "其中运动部分约 ${(settings.profile.tdee - settings.profile.bmr).fmt0()} kcal。" +
+                                    "减脂建议先按 ${settings.profile.deficitPercent}% 缺口，即 " +
                                     "${recommended.kcal.fmt0()} kcal。",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -221,11 +268,14 @@ fun GoalScreen(vm: MainViewModel, onBack: () -> Unit) {
             item {
                 Button(
                     onClick = {
-                        val goal = NutritionGoal(kcal, protein, fat, carbs)
+                        val goal = NutritionGoal(
+                            if (autoMode) autoBudget else kcal,
+                            protein, fat, carbs
+                        )
                         if (onlyToday) vm.saveGoalForDate(date, goal) else vm.saveDefaultGoal(goal)
                         onBack()
                     },
-                    enabled = kcal > 0,
+                    enabled = effectiveKcal > 0,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(if (onlyToday) "保存今天的目标" else "保存为默认目标")
@@ -255,7 +305,8 @@ private fun GoalNumberField(
     onChange: (String) -> Unit,
     label: String,
     suffix: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
 ) {
     OutlinedTextField(
         value = value,
@@ -263,6 +314,7 @@ private fun GoalNumberField(
         label = { Text(label) },
         suffix = { Text(suffix) },
         singleLine = true,
+        enabled = enabled,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         modifier = modifier.fillMaxWidth()
     )

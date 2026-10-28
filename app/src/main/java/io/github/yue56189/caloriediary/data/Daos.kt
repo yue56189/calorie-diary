@@ -108,3 +108,22 @@ interface GoalDao {
     @Query("DELETE FROM daily_goals WHERE date = :date")
     suspend fun clear(date: Long)
 }
+
+@Dao
+interface ActivityDao {
+
+    @Query("SELECT * FROM daily_activity WHERE date = :date")
+    suspend fun byDate(date: Long): DailyActivity?
+
+    @Query("SELECT * FROM daily_activity WHERE date = :date")
+    fun observeByDate(date: Long): Flow<DailyActivity?>
+
+    @Query("SELECT * FROM daily_activity")
+    fun observeAll(): Flow<List<DailyActivity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(activity: DailyActivity)
+
+    @Query("DELETE FROM daily_activity WHERE date = :date")
+    suspend fun clear(date: Long)
+}

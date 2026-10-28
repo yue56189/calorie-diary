@@ -65,6 +65,31 @@ object NutritionMath {
     fun macroKcal(goal: NutritionGoal): Double =
         goal.protein * 4 + goal.fat * 9 + goal.carbs * 4
 
+    /**
+     * 「基础代谢 + 运动消耗」口径的每日热量预算。
+     *
+     * 不用活动系数去推 TDEE —— 本应用让用户自己填当天运动消耗，
+     * 预算 = BMR + 运动消耗，缺口靠这个差值自然产生（想吃得更少就少填运动量）。
+     */
+    fun budget(bmr: Double, exerciseKcal: Double): Double =
+        (bmr + exerciseKcal).coerceAtLeast(0.0)
+
+    /**
+     * 把默认营养目标等比缩放到新的热量口径，三者的热量占比保持不变。
+     * 这样用户不用为了改口径重新配一遍蛋白/脂肪/碳水。
+     */
+    fun scaleTo(goal: NutritionGoal, kcal: Double): NutritionGoal {
+        if (kcal <= 0.0) return goal.copy(kcal = 0.0)
+        if (goal.kcal <= 0.0) return goal.copy(kcal = kcal.round1())
+        val r = kcal / goal.kcal
+        return NutritionGoal(
+            kcal = kcal.round1(),
+            protein = (goal.protein * r).round1(),
+            fat = (goal.fat * r).round1(),
+            carbs = (goal.carbs * r).round1()
+        )
+    }
+
     fun Double.round1(): Double = kotlin.math.round(this * 10) / 10.0
 }
 

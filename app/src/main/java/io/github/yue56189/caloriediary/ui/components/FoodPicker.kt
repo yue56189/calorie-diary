@@ -4,6 +4,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -46,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.yue56189.caloriediary.data.FoodItem
 import io.github.yue56189.caloriediary.data.Meal
+import io.github.yue56189.caloriediary.data.PortionUnits
 import io.github.yue56189.caloriediary.ui.MainViewModel
 import io.github.yue56189.caloriediary.ui.fmt0
 import io.github.yue56189.caloriediary.ui.fmtTrim
@@ -96,7 +99,8 @@ fun FoodPickerSheet(
     ) {
         Column(
             modifier = Modifier
-                .fillMaxHeight(0.92f)
+                // 选食物时铺满，进入份量步骤后收起来，免得下面一大片空白
+                .then(if (picked == null) Modifier.fillMaxHeight(0.92f) else Modifier)
                 .padding(horizontal = 20.dp)
         ) {
             Text(
@@ -259,6 +263,7 @@ fun FoodRow(
 }
 
 /** 份量输入步骤。 */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PortionEditor(
     food: FoodItem,
@@ -309,20 +314,37 @@ fun PortionEditor(
         )
 
         Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(50.0, 100.0, 150.0, 200.0).forEach { g ->
                 AssistChip(
                     onClick = { text = g.fmtTrim() },
                     label = { Text("${g.fmt0()}g") }
                 )
             }
+            if (food.portionGrams > 0 && food.portionLabel.isNotBlank()) {
+                AssistChip(
+                    onClick = { text = food.portionGrams.fmtTrim() },
+                    label = { Text("${food.portionLabel} ${food.portionGrams.fmt0()}g") }
+                )
+            }
         }
-        if (food.portionGrams > 0 && food.portionLabel.isNotBlank()) {
-            Spacer(Modifier.height(8.dp))
-            AssistChip(
-                onClick = { text = food.portionGrams.fmtTrim() },
-                label = { Text("${food.portionLabel}（${food.portionGrams.fmt0()}g）") }
-            )
+
+        // 徒手估量：在外吃饭没有秤的时候用
+        val units = remember(food.category, food.name) {
+            PortionUnits.availableFor(food.category, food.name)
+        }
+        if (units.isNotEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            MetaText("没有秤？按体积估：")
+            Spacer(Modifier.height(6.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                units.forEach { (unit, gramsOfUnit) ->
+                    AssistChip(
+                        onClick = { text = gramsOfUnit.fmtTrim() },
+                        label = { Text("${unit.label} ≈ ${gramsOfUnit.fmt0()}g") }
+                    )
+                }
+            }
         }
 
         Spacer(Modifier.height(20.dp))

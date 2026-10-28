@@ -46,7 +46,7 @@ data class DiaryEntry(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     /** 以 epochDay 表示的自然日。 */
     val date: Long,
-    /** 0 早餐 / 1 午餐 / 2 晚餐 / 3 加餐 */
+    /** 餐次代码，见 [Meal]。0 早餐 / 1 午餐 / 2 晚餐 / 3 早餐后 / 4 午餐后 / 5 晚餐后 */
     val meal: Int,
     val foodId: Long? = null,
     val name: String,
@@ -100,14 +100,34 @@ data class NutritionGoal(
     val carbs: Double
 )
 
-/** 餐次。 */
+/** 餐次。加餐按「餐后」拆成三段，顺序与一天的时间轴一致。 */
 enum class Meal(val code: Int, val title: String) {
     BREAKFAST(0, "早餐"),
+    SNACK_MORNING(3, "早餐后加餐"),
     LUNCH(1, "午餐"),
+    SNACK_AFTERNOON(4, "午餐后加餐"),
     DINNER(2, "晚餐"),
-    SNACK(3, "加餐");
+    SNACK_EVENING(5, "晚餐后加餐");
+
+    val isSnack: Boolean get() = this != BREAKFAST && this != LUNCH && this != DINNER
 
     companion object {
-        fun of(code: Int): Meal = entries.firstOrNull { it.code == code } ?: SNACK
+        /** 三个正餐，用于统计与快速添加的默认值。 */
+        val meals: List<Meal> = listOf(BREAKFAST, LUNCH, DINNER)
+        val snacks: List<Meal> = listOf(SNACK_MORNING, SNACK_AFTERNOON, SNACK_EVENING)
+
+        fun of(code: Int): Meal = entries.firstOrNull { it.code == code } ?: SNACK_AFTERNOON
     }
 }
+
+/**
+ * 某一天的运动消耗。与 [DailyGoal] 分开存，因为两者的生命周期不同：
+ * 目标可以「每天沿用默认」，运动消耗则天天不同，且很多人根本不设单独目标。
+ */
+@Entity(tableName = "daily_activity")
+data class DailyActivity(
+    @PrimaryKey val date: Long,
+    /** 运动消耗的热量（千卡）。 */
+    val exerciseKcal: Double = 0.0
+)
+

@@ -69,6 +69,7 @@ fun SettingsScreen(vm: MainViewModel, onOpenGoal: () -> Unit) {
     val context = LocalContext.current
     var editingProfile by remember { mutableStateOf(false) }
     var usdaDraft by remember(settings.usdaApiKey) { mutableStateOf(settings.usdaApiKey) }
+    var tianDraft by remember(settings.tianapiKey) { mutableStateOf(settings.tianapiKey) }
 
     Scaffold(
         topBar = {
@@ -135,6 +136,14 @@ fun SettingsScreen(vm: MainViewModel, onOpenGoal: () -> Unit) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = if (settings.goalMode == 1)
+                            "热量口径：基础代谢 ${settings.profile.bmr.fmt0()} + 当天运动消耗；上面是比例基准"
+                        else "热量口径：手动设定",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.height(4.dp))
                     TextButton(onClick = onOpenGoal) {
                         Icon(Icons.Outlined.Edit, contentDescription = null)
                         Spacer(Modifier.width(6.dp))
@@ -177,18 +186,63 @@ fun SettingsScreen(vm: MainViewModel, onOpenGoal: () -> Unit) {
             item {
                 SectionCard(title = "联网查询数据源") {
                     Text(
-                        text = "默认使用 Open Food Facts（开源、无需 Key）。" +
-                                "填入 USDA FoodData Central 的 API Key 后，联网搜索会同时查询美国农业部数据库，" +
-                                "英文食物名命中率更高。Key 可在 fdc.nal.usda.gov 免费申请，也可先填 DEMO_KEY 试用（限速）。",
+                        text = "三个源可以同时开，搜一次并行查，结果合并去重。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(Modifier.height(10.dp))
+
+                    Spacer(Modifier.height(14.dp))
+                    Text("天行数据 · 营养成分表（国内）", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = "数据体系是《中国食物成分表》（谷类 / 畜肉类 / 蔬菜类 …），" +
+                                "中文食物名命中率最高，推荐优先启用。到 tianapi.com 注册后免费申请「营养成分表」接口，" +
+                                "在「我的密钥」里复制 Key 填下面。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = tianDraft,
+                        onValueChange = { tianDraft = it.trim() },
+                        label = { Text("天行数据 API Key") },
+                        placeholder = { Text("留空则不查国内源") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { vm.setTianapiKey(tianDraft) }) { Text("保存") }
+                        TextButton(onClick = {
+                            runCatching {
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, Uri.parse("https://www.tianapi.com/apiview/121"))
+                                )
+                            }
+                        }) {
+                            Icon(Icons.AutoMirrored.Outlined.OpenInNew, contentDescription = null)
+                            Spacer(Modifier.width(6.dp))
+                            Text("去申请")
+                        }
+                    }
+
+                    Spacer(Modifier.height(14.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    Spacer(Modifier.height(14.dp))
+
+                    Text("USDA FoodData Central（美国）", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = "英文食物名命中率更高，Key 可在 fdc.nal.usda.gov 免费申请，也可先填 DEMO_KEY 试用（限速）。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         value = usdaDraft,
                         onValueChange = { usdaDraft = it.trim() },
                         label = { Text("USDA API Key（可选）") },
-                        placeholder = { Text("留空则只查 Open Food Facts") },
+                        placeholder = { Text("留空则不查 USDA") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -199,11 +253,34 @@ fun SettingsScreen(vm: MainViewModel, onOpenGoal: () -> Unit) {
                             Text("用 DEMO_KEY 试用")
                         }
                     }
+
+                    Spacer(Modifier.height(14.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    Spacer(Modifier.height(10.dp))
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Open Food Facts（无需 Key）", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                text = "开源包装食品库，扫条码数据多，中文商品覆盖率一般。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = settings.useOpenFoodFacts,
+                            onCheckedChange = { vm.setUseOpenFoodFacts(it) }
+                        )
+                    }
                 }
             }
 
             item {
                 SectionCard(title = "数据来源") {
+                    SourceLine(
+                        "天行数据 · 营养成分表",
+                        "国内联网查询，数据体系为《中国食物成分表》，需自备 API Key。"
+                    )
                     SourceLine(
                         "USDA FoodData Central（SR Legacy）",
                         "内置食物库的热量与营养素数据，美国农业部，公有领域。"
